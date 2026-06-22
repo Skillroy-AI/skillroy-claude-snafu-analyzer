@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SNAFU Analyzer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="logo">🐞</span>
+        <div>
+          <h1>SNAFU Analyzer</h1>
+          <p class="sub">Review Claude Code transcripts &amp; memory for dropped threads, unpersisted decisions, and folder/context mix-ups.</p>
+        </div>
+      </div>
+      <div class="controls">
+        <label>Project
+          <select id="project"><option value="">All projects</option></select>
+        </label>
+        <label>From <input type="date" id="from" /></label>
+        <label>To <input type="date" id="to" /></label>
+        <label class="grow">Search <input type="search" id="q" placeholder="title, prompt, cwd…" /></label>
+        <button id="scan" class="primary">Scan</button>
+        <button id="analyze" title="Optional semantic pass via your local claude CLI">Analyze with Claude</button>
+      </div>
+      <div id="summary" class="summary"></div>
+    </header>
+
+    <main>
+      <section id="list" class="pane">
+        <div class="pane-head"><h2>Sessions</h2><span id="count" class="muted"></span></div>
+        <div id="sessions"></div>
+      </section>
+
+      <section class="pane detail">
+        <nav class="tabs">
+          <button data-tab="snafus" class="active">SNAFUs</button>
+          <button data-tab="session">Session</button>
+          <button data-tab="memory">Memory</button>
+        </nav>
+        <div id="tab-snafus" class="tab"></div>
+        <div id="tab-session" class="tab hidden"></div>
+        <div id="tab-memory" class="tab hidden"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

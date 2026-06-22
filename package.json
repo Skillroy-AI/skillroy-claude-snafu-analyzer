@@ -1,0 +1,27 @@
+{
+  "name": "skillroy-claude-snafu-analyzer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local web app that reviews Claude Code transcripts + memory to surface 'snafus' — dropped TODOs, decisions never persisted, folder/cwd context mix-ups, and cross-session drift.",
+  "license": "MIT",
+  "bin": {
+    "snafu": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "serve": "node dist/index.js",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.6.0"
+  }
+}
