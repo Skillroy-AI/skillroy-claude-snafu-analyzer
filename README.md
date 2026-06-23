@@ -1,7 +1,8 @@
 # SNAFU Analyzer
 
-A small local web app that reviews your **Claude Code transcripts and memory files** and surfaces
-*snafus* — things that quietly went sideways across sessions:
+A local tool that reviews your **Claude Code transcripts and memory files** and surfaces *snafus* —
+things that quietly went sideways across sessions. Use it either as a one-message **`/snafu` skill**
+inside Claude Code, or as a **local web app** with a browsable UI. It finds:
 
 - **Folder / context mix-ups** — you moved or renamed a project but kept running Claude from the old
   path, so work landed in the wrong repo and cwd-scoped memory drifted. (Claude Code derives a
@@ -16,65 +17,66 @@ A small local web app that reviews your **Claude Code transcripts and memory fil
 
 It's read-only: it never modifies transcripts, memory, or your projects.
 
-## Quick start
+First, get the code (needed for either option). You'll need [Node.js](https://nodejs.org) 18+:
 
 ```bash
-npm install
-npm start            # or: npm run dev   (auto-reload)
-# open http://localhost:4999
+git clone https://github.com/Skillroy-AI/skillroy-claude-snafu-analyzer.git
 ```
 
-Then pick a date range (and optionally a project), hit **Scan**, and review the **SNAFUs** tab.
-Click any piece of evidence to jump to that session; the **Session** tab shows the round-by-round
-timeline (your prompt → Claude's end-of-round summary → tools → extracted signals); the **Memory**
-tab shows the project's memory files.
+## Option 1 — the `/snafu` skill (quickest)
 
-### Optional: Claude-powered analysis
+Investigate a suspicion in a single message, right inside [Claude Code](https://claude.com/claude-code)
+— no server to run. Make `/snafu` available in **every** project by linking it into your personal
+skills folder.
 
-If the [`claude` CLI](https://claude.com/claude-code) is on your `PATH` (no API key needed), two
-buttons light up. If `claude` isn't found they degrade gracefully and the deterministic findings stand.
-
-- **Analyze with Claude** — a *broad* one-shot scan: sends a compact digest of the in-scope sessions +
-  memory to `claude -p` to catch contradictions/drift/dropped threads that keyword heuristics miss.
-
-- **🔎 Investigate…** — a *targeted* investigation when you already suspect something. A guided flow:
-  1. pick a date/time range → the tool lists the projects that had sessions in that window;
-  2. select the affected project(s);
-  3. describe the issue in your own words (e.g. *"the database may have been called by the wrong name
-     in a later session"*).
-
-  The tool then sends Claude a **narration pack** — just the human prompts + Claude's text (tool
-  input/output stripped, so it's compact) — for the selected sessions, plus the project's *current*
-  memory files, and asks it to judge whether your suspicion holds, quoting the evidence per session.
-  Because memory may have been corrected after the fact, a mismatch between an older transcript and
-  current memory is itself treated as evidence the drift happened — so this catches issues that no
-  longer exist anywhere except the transcript.
-
-## `/snafu` skill — one-off investigation, no server
-
-For a quick "did X drift across my last sessions?" check without starting the web app, this repo ships
-a Claude Code **skill** at [`.claude/skills/snafu/`](.claude/skills/snafu/). Here, **Claude itself is
-the analyzer** — there's no server and no `claude -p` subprocess. A bundled zero-dependency helper
-(`extract.mjs`) finds the right transcripts, strips them to the narration, and appends the project's
-memory; Claude reads that and judges your suspicion.
-
-It's available automatically when you run Claude Code **in this repo**. To use it **anywhere**, install
-it at the user level:
+**macOS / Linux**
 
 ```bash
-# symlink keeps it in sync with the repo; or use cp -r to copy
-ln -s "$PWD/.claude/skills/snafu" ~/.claude/skills/snafu
+mkdir -p ~/.claude/skills
+ln -s "$(pwd)/skillroy-claude-snafu-analyzer/.claude/skills/snafu" ~/.claude/skills/snafu
 ```
 
-Then invoke it conversationally — it infers what it can and only asks for what's missing:
+**Windows** — PowerShell, run from the folder where you cloned:
+
+```powershell
+New-Item -ItemType SymbolicLink -Path "$HOME\.claude\skills\snafu" -Target "$PWD\skillroy-claude-snafu-analyzer\.claude\skills\snafu"
+```
+
+(Prefer copying over linking? Use `cp -r` / `xcopy` instead — but you'll have to re-copy to get updates.)
+
+Then **restart Claude Code** so it loads the skill. Now just describe what you suspect — it infers the
+rest and asks only for what's missing:
 
 ```
-/snafu                       # walks you through range → project(s) → suspicion
-snafu check on skillroy-tasks, last 2 sessions — did the DB name drift from LadybugDB to Kùzu?
+snafu check on my-project, last 3 sessions — did Claude start contradicting an earlier decision?
 ```
 
-The helper is also usable on its own: `node .claude/skills/snafu/extract.mjs --list` or
-`--project <name> --last <N>`.
+…or type `/snafu` with no details and it walks you through: date range → project(s) → your suspicion.
+It's read-only: it reports what it found (and the session it came from) and suggests a fix without
+making one.
+
+> Stuck on a step? Paste it into Claude Code and ask it to set the skill up for you.
+
+## Option 2 — the web app (browsable UI)
+
+The web app adds a clickable timeline and always-on deterministic detectors across **all** your
+projects at once. Needs [Node.js](https://nodejs.org) 18+.
+
+```bash
+cd skillroy-claude-snafu-analyzer
+npm install          # one-time: install dependencies
+npm start            # start the local server
+# then open the printed URL, e.g. http://localhost:4999
+```
+
+Pick a date range (and optionally a project), hit **Scan**, and review the **SNAFUs** tab; click any
+evidence to jump to that session. If the [`claude` CLI](https://claude.com/claude-code) is on your
+`PATH` (no API key needed), two extra buttons appear:
+
+- **Analyze with Claude** — a broad semantic scan of everything in scope.
+- **🔎 Investigate…** — the guided, point-and-click version of the `/snafu` skill.
+
+Everything is read-only — it never changes your transcripts, memory, or projects.
 
 ## How it works
 
