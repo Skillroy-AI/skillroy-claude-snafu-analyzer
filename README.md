@@ -57,6 +57,23 @@ making one.
 
 > Stuck on a step? Paste it into Claude Code and ask it to set the skill up for you.
 
+### Example: investigating regressions
+
+Recurring regressions — especially while splitting a large codebase into smaller pieces — often trace
+back to drift across sessions: a fix that got quietly reverted, or a plan that changed without being
+written down. Point `/snafu` at the span where things went wrong:
+
+```
+snafu check on my-project, last 5 sessions — a bug we fixed earlier came back; did a later session revert or contradict the fix?
+```
+```
+snafu check on my-project this week — did the plan for splitting <module> change between sessions without being saved to memory?
+```
+
+It reads those sessions' narration + memory and tells you what drifted and which session it came from,
+then suggests a fix (read-only — it won't change anything). The web app's **🔎 Investigate…** button
+does the same thing, point-and-click, and is handy for very large spans.
+
 ## Option 2 — the web app (browsable UI)
 
 The web app adds a clickable timeline and always-on deterministic detectors across **all** your
