@@ -8,7 +8,9 @@
 Please clone https://github.com/Skillroy-AI/skillroy-claude-snafu-analyzer.git, then install the snafu skill globally for me via linking.
 ```
 
-Then restart Claude and reload skills (only needed first time):
+Then **restart Claude Code** — needed the first time so it registers the brand-new skill.
+
+Later, when the skill is updated (see Tip 1), reload it *without* restarting:
 
 ```
 /reload-skills
