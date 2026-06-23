@@ -1,7 +1,7 @@
 /** Parse one Claude Code JSONL transcript into a normalized SessionDetail. */
 import fs from "node:fs";
 import path from "node:path";
-import type { CwdPoint, Round, SessionDetail, Signal, ToolCall } from "./types.js";
+import type { CwdPoint, Role, Round, SessionDetail, Signal, ToolCall } from "./types.js";
 import { extractSignals } from "./extract.js";
 
 // --- content helpers -------------------------------------------------------
@@ -110,6 +110,45 @@ function cwdsDiverge(cwds: string[]): boolean {
     if (uniq[i] !== uniq[i - 1] && !uniq[i].startsWith(uniq[i - 1] + "/")) return true;
   }
   return false;
+}
+
+export interface NarrationItem {
+  role: Role;
+  ts?: string;
+  text: string;
+}
+
+/**
+ * The "narration" of a session: human prompts + Claude's text blocks, with tool inputs/results and
+ * thinking stripped. This is the compact, high-signal view used for targeted Claude investigations —
+ * terminology/decision drift shows up in the narration, not in the (huge) tool I/O.
+ */
+export function sessionNarration(file: string, perBlockCap = 3000): NarrationItem[] {
+  const raw = fs.readFileSync(file, "utf8");
+  const out: NarrationItem[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let d: any;
+    try {
+      d = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const ts: string | undefined = d.timestamp;
+    const msg = d.message;
+    if (!msg || typeof msg !== "object") continue;
+    if (msg.role === "user") {
+      const { kind, text } = classifyUser(msg.content, !!d.isMeta);
+      if ((kind === "human" || kind === "command") && text.trim())
+        out.push({ role: "user", ts, text: text.slice(0, perBlockCap) });
+    } else if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      for (const b of msg.content as any[]) {
+        if (b && b.type === "text" && typeof b.text === "string" && b.text.trim())
+          out.push({ role: "assistant", ts, text: b.text.slice(0, perBlockCap) });
+      }
+    }
+  }
+  return out;
 }
 
 export function parseSessionFile(file: string, bucket: string): SessionDetail {

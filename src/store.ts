@@ -1,5 +1,6 @@
 /** Discovers buckets, parses sessions (cached by file mtime), and answers scoped queries. */
 import fs from "node:fs";
+import os from "node:os";
 import { listBuckets, projectsRoot, type BucketInfo } from "./discover.js";
 import { parseSessionFile } from "./parse.js";
 import { readMemory } from "./memory.js";
@@ -57,13 +58,35 @@ export class Store {
     }
   }
 
+  // The OS temp dir, in both the plain and realpath'd forms (macOS reports /var/... but records
+  // /private/var/...). Used to hide the analyzer's OWN `claude -p` sub-runs, which log transcripts
+  // under the temp dir and would otherwise show up as a junk "project".
+  private tempPrefixes: string[] = (() => {
+    const set = new Set<string>([os.tmpdir()]);
+    try {
+      set.add(fs.realpathSync(os.tmpdir()));
+    } catch {
+      /* ignore */
+    }
+    return [...set];
+  })();
+
+  private isTempCwd(cwd: string): boolean {
+    return this.tempPrefixes.some((p) => cwd === p || cwd.startsWith(p + "/"));
+  }
+
+  /** A session is hidden if every cwd it ran in is under the OS temp dir (i.e. a sub-Claude run). */
+  private hidden(s: SessionDetail): boolean {
+    return s.cwds.length > 0 && s.cwds.every((c) => this.isTempCwd(c.cwd));
+  }
+
   allSessions(project?: string): SessionDetail[] {
     const out: SessionDetail[] = [];
     for (const b of this.buckets) {
       if (project && b.bucket !== project) continue;
       for (const f of b.sessionFiles) {
         const s = this.parse(f, b.bucket);
-        if (s) out.push(s);
+        if (s && !this.hidden(s)) out.push(s);
       }
     }
     return out;
@@ -84,6 +107,64 @@ export class Store {
         return true;
       })
       .sort((a, b) => (a.firstTs || "").localeCompare(b.firstTs || ""));
+  }
+
+  private overlaps(s: SessionDetail, from?: string, to?: string): boolean {
+    const toN = normalizeTo(to);
+    if (from && (s.lastTs || "") < from) return false;
+    if (toN && (s.firstTs || "") > toN) return false;
+    return true;
+  }
+
+  /** Projects (buckets) that have at least one session overlapping [from,to]. */
+  projectsInRange(from?: string, to?: string) {
+    const out: {
+      bucket: string;
+      label: string;
+      sessionCount: number;
+      cwdCount: number;
+      firstTs?: string;
+      lastTs?: string;
+      hasMemory: boolean;
+    }[] = [];
+    for (const b of this.buckets) {
+      const inr = b.sessionFiles
+        .map((f) => this.parse(f, b.bucket))
+        .filter((s): s is SessionDetail => !!s && !this.hidden(s) && this.overlaps(s, from, to));
+      if (inr.length === 0) continue;
+      const cwds = new Map<string, number>();
+      let firstTs: string | undefined;
+      let lastTs: string | undefined;
+      for (const s of inr) {
+        for (const c of s.cwds) cwds.set(c.cwd, (cwds.get(c.cwd) || 0) + c.count);
+        if (s.firstTs && (!firstTs || s.firstTs < firstTs)) firstTs = s.firstTs;
+        if (s.lastTs && (!lastTs || s.lastTs > lastTs)) lastTs = s.lastTs;
+      }
+      out.push({
+        bucket: b.bucket,
+        label: [...cwds.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || b.bucket,
+        sessionCount: inr.length,
+        cwdCount: cwds.size,
+        firstTs,
+        lastTs,
+        hasMemory: (this.memoryByBucket.get(b.bucket)?.files.length || 0) > 0,
+      });
+    }
+    return out.sort((a, b) => (b.lastTs || "").localeCompare(a.lastTs || ""));
+  }
+
+  /** All sessions across the given buckets that overlap [from,to], chronological. */
+  sessionsForProjects(projects: string[], from?: string, to?: string): SessionDetail[] {
+    const set = new Set(projects);
+    const out: SessionDetail[] = [];
+    for (const b of this.buckets) {
+      if (!set.has(b.bucket)) continue;
+      for (const f of b.sessionFiles) {
+        const s = this.parse(f, b.bucket);
+        if (s && !this.hidden(s) && this.overlaps(s, from, to)) out.push(s);
+      }
+    }
+    return out.sort((a, b) => (a.firstTs || "").localeCompare(b.firstTs || ""));
   }
 
   sessionById(id: string): SessionDetail | null {
@@ -118,7 +199,9 @@ export class Store {
   }[] {
     return this.buckets
       .map((b) => {
-        const sessions = b.sessionFiles.map((f) => this.parse(f, b.bucket)).filter(Boolean) as SessionDetail[];
+        const sessions = (b.sessionFiles.map((f) => this.parse(f, b.bucket)).filter(Boolean) as SessionDetail[]).filter(
+          (s) => !this.hidden(s),
+        );
         const cwds = new Map<string, number>();
         let firstTs: string | undefined;
         let lastTs: string | undefined;
@@ -138,6 +221,7 @@ export class Store {
           hasMemory: (this.memoryByBucket.get(b.bucket)?.files.length || 0) > 0,
         };
       })
+      .filter((p) => p.sessionCount > 0)
       .sort((a, b) => (b.lastTs || "").localeCompare(a.lastTs || ""));
   }
 }

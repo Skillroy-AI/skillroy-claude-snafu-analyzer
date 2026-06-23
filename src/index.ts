@@ -12,7 +12,7 @@ function arg(name: string): string | undefined {
   return i !== -1 ? process.argv[i + 1] : undefined;
 }
 
-const port = Number(arg("port") || process.env.PORT || 4317);
+const port = Number(arg("port") || process.env.PORT || 4999);
 const root = arg("projects-dir") || projectsRoot();
 
 const store = new Store(root);

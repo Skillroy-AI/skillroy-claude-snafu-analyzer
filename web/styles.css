@@ -117,3 +117,29 @@ main { flex: 1; display: grid; grid-template-columns: minmax(320px, 420px) 1fr; 
 .memfile pre { margin: 0; padding: 12px; white-space: pre-wrap; font-size: 12px; color: var(--muted); max-height: 320px; overflow: auto; }
 mark { background: var(--accent); color: #1a1205; }
 .spinner { color: var(--accent); }
+
+/* Investigate modal */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.62); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 50; overflow: auto; }
+.modal.hidden { display: none; }
+.modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: min(780px, 100%); box-shadow: 0 24px 70px rgba(0,0,0,.55); }
+.modal-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.modal-head h2 { margin: 0; font-size: 16px; }
+button.icon { background: transparent; border: none; font-size: 16px; color: var(--muted); padding: 4px 8px; }
+button.icon:hover { color: var(--text); }
+.modal-body { padding: 16px 18px; }
+.step { margin-bottom: 18px; }
+.step-h { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.step-h .num { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #1a1205; font-weight: 700; font-size: 11px; }
+.modal .row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+.modal label { display: flex; flex-direction: column; font-size: 11px; color: var(--muted); gap: 3px; }
+.modal input, .modal textarea { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font: inherit; font-size: 13px; }
+.modal textarea { width: 100%; resize: vertical; }
+.inv-projects { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
+.inv-projects label.proj { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 13px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.inv-projects label.proj:hover { background: var(--panel2); }
+.inv-projects .pcwd { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.inv-projects .pmeta { color: var(--muted); font-size: 11px; margin-left: auto; white-space: nowrap; }
+.modal-actions { display: flex; align-items: center; gap: 12px; margin: 8px 0 4px; }
+.inv-results { margin-top: 14px; }
+.inv-summary { border-left: 3px solid var(--accent); padding: 10px 12px; background: var(--panel2); border-radius: 6px; margin-bottom: 12px; white-space: pre-wrap; font-size: 13px; }
+.inv-results pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); background: var(--bg); padding: 10px; border-radius: 6px; overflow: auto; max-height: 200px; }

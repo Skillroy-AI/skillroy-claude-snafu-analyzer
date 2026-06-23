@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Store, toSummary, type Scope } from "./store.js";
 import { runDetectors } from "./detectors.js";
-import { analyzeWithClaude, claudeAvailable } from "./analyze-claude.js";
+import { analyzeWithClaude, claudeAvailable, investigateWithClaude } from "./analyze-claude.js";
+import { sessionNarration } from "./parse.js";
 import type { Finding } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -77,6 +78,47 @@ export function createServer(store: Store) {
     if (sessions.length === 0) return res.json({ available: true, findings: [], error: "no sessions in scope" });
     const result = await analyzeWithClaude(sessions, store.memory(scope.project));
     res.json(result);
+  });
+
+  // Step 1 of an investigation: which projects had sessions in this date/time range?
+  app.get("/api/projects-in-range", (req, res) => {
+    const from = (req.query.from as string) || undefined;
+    const to = (req.query.to as string) || undefined;
+    res.json({ projects: store.projectsInRange(from, to) });
+  });
+
+  // Step 3: run the targeted Claude investigation over the chosen sessions + their memory.
+  const MAX_INVESTIGATE_SESSIONS = 16;
+  app.post("/api/investigate", async (req, res) => {
+    const { from, to, issue } = req.body || {};
+    const projects: string[] = Array.isArray(req.body?.projects) ? req.body.projects : [];
+    if (!issue || typeof issue !== "string" || !issue.trim())
+      return res.status(400).json({ available: true, findings: [], error: "describe the issue you suspect" });
+    if (projects.length === 0)
+      return res.status(400).json({ available: true, findings: [], error: "select at least one project" });
+
+    let sessions = store.sessionsForProjects(projects, from, to);
+    if (sessions.length === 0) return res.json({ available: true, findings: [], error: "no sessions in that range/project" });
+
+    let capped = 0;
+    if (sessions.length > MAX_INVESTIGATE_SESSIONS) {
+      capped = sessions.length - MAX_INVESTIGATE_SESSIONS;
+      sessions = sessions.slice(-MAX_INVESTIGATE_SESSIONS); // keep the most recent in range
+    }
+
+    const memory = [...new Set(projects)].flatMap((p) => store.memory(p));
+    const result = await investigateWithClaude({
+      issue,
+      memory,
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        title: s.title,
+        firstTs: s.firstTs,
+        cwds: s.cwds.map((c) => ({ cwd: c.cwd })),
+        narration: sessionNarration(s.file),
+      })),
+    });
+    res.json({ ...result, sessionCount: sessions.length, capped });
   });
 
   app.use(express.static(WEB_DIR));

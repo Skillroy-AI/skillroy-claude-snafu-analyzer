@@ -29,12 +29,26 @@ Click any piece of evidence to jump to that session; the **Session** tab shows t
 timeline (your prompt → Claude's end-of-round summary → tools → extracted signals); the **Memory**
 tab shows the project's memory files.
 
-### Optional: semantic pass with Claude
+### Optional: Claude-powered analysis
 
-If the [`claude` CLI](https://claude.com/claude-code) is on your `PATH`, the **Analyze with Claude**
-button sends a compact, self-contained digest of the in-scope sessions + memory to a one-shot
-`claude -p` run to catch contradictions/drift that keyword heuristics miss. No API key needed; if
-`claude` isn't found, the button just reports that and the deterministic findings still stand.
+If the [`claude` CLI](https://claude.com/claude-code) is on your `PATH` (no API key needed), two
+buttons light up. If `claude` isn't found they degrade gracefully and the deterministic findings stand.
+
+- **Analyze with Claude** — a *broad* one-shot scan: sends a compact digest of the in-scope sessions +
+  memory to `claude -p` to catch contradictions/drift/dropped threads that keyword heuristics miss.
+
+- **🔎 Investigate…** — a *targeted* investigation when you already suspect something. A guided flow:
+  1. pick a date/time range → the tool lists the projects that had sessions in that window;
+  2. select the affected project(s);
+  3. describe the issue in your own words (e.g. *"the database may have been called by the wrong name
+     in a later session"*).
+
+  The tool then sends Claude a **narration pack** — just the human prompts + Claude's text (tool
+  input/output stripped, so it's compact) — for the selected sessions, plus the project's *current*
+  memory files, and asks it to judge whether your suspicion holds, quoting the evidence per session.
+  Because memory may have been corrected after the fact, a mismatch between an older transcript and
+  current memory is itself treated as evidence the drift happened — so this catches issues that no
+  longer exist anywhere except the transcript.
 
 ## How it works
 
@@ -69,7 +83,8 @@ button sends a compact, self-contained digest of the in-scope sessions + memory 
 
 `GET /api/projects` · `GET /api/sessions?from&to&project&q` · `GET /api/sessions/:id` ·
 `GET /api/snafus?from&to&project` · `GET /api/memory?project` · `GET /api/claude/available` ·
-`POST /api/analyze?from&to&project`
+`POST /api/analyze?from&to&project` · `GET /api/projects-in-range?from&to` ·
+`POST /api/investigate` (body: `{from, to, projects[], issue}`)
 
 ## Caveats
 

@@ -62,6 +62,7 @@ async function scan() {
 }
 
 async function selectSession(id) {
+  closeInvestigate(); // if an evidence link was clicked inside the modal, surface the session behind it
   state.selected = id;
   renderList();
   setTab("session");
@@ -225,6 +226,114 @@ async function renderMemory() {
   }
 }
 
+// --- investigate modal -----------------------------------------------------
+
+function toLocalInput(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// datetime-local is in the user's LOCAL zone; transcripts are UTC — convert before sending.
+function isoOrUndef(localStr) {
+  if (!localStr) return undefined;
+  const d = new Date(localStr);
+  return isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+function openInvestigate() {
+  const f = $("from").value;
+  const t = $("to").value;
+  $("inv-from").value = f ? f + "T00:00" : toLocalInput(new Date(Date.now() - 30 * 864e5));
+  $("inv-to").value = t ? t + "T23:59" : toLocalInput(new Date());
+  $("inv-results").innerHTML = "";
+  $("inv-status").textContent = "";
+  $("modal").classList.remove("hidden");
+}
+function closeInvestigate() {
+  $("modal").classList.add("hidden");
+}
+
+function updateInvRun() {
+  const anyProj = document.querySelectorAll("#inv-projects input:checked").length > 0;
+  const hasIssue = $("inv-issue").value.trim().length > 0;
+  $("inv-run").disabled = !(anyProj && hasIssue);
+}
+
+async function invFindProjects() {
+  const c = $("inv-projects");
+  c.className = "inv-projects muted";
+  c.textContent = "Finding…";
+  const u = new URLSearchParams();
+  const f = isoOrUndef($("inv-from").value);
+  const t = isoOrUndef($("inv-to").value);
+  if (f) u.set("from", f);
+  if (t) u.set("to", t);
+  const { projects } = await (await fetch("/api/projects-in-range?" + u.toString())).json();
+  c.innerHTML = "";
+  if (!projects.length) {
+    c.className = "inv-projects muted";
+    c.textContent = "No projects had sessions in that range.";
+    updateInvRun();
+    return;
+  }
+  c.className = "inv-projects";
+  for (const p of projects) {
+    const lab = el("label", "proj");
+    lab.innerHTML =
+      `<input type="checkbox" value="${esc(p.bucket)}" />` +
+      `<span class="pcwd">${esc(shortCwd(p.label))}</span>` +
+      `<span class="pmeta">${p.sessionCount} sess${p.cwdCount > 1 ? " · ⚠ co-mingled" : ""}${p.hasMemory ? " · mem" : ""}</span>`;
+    lab.querySelector("input").addEventListener("change", updateInvRun);
+    c.appendChild(lab);
+  }
+  updateInvRun();
+}
+
+async function invRun() {
+  const projects = [...document.querySelectorAll("#inv-projects input:checked")].map((i) => i.value);
+  const issue = $("inv-issue").value.trim();
+  if (!projects.length || !issue) return;
+  const body = { from: isoOrUndef($("inv-from").value), to: isoOrUndef($("inv-to").value), projects, issue };
+  const btn = $("inv-run");
+  btn.disabled = true;
+  $("inv-status").textContent = "Investigating… Claude is reading the selected sessions (can take a minute).";
+  $("inv-results").innerHTML = "";
+  try {
+    const res = await (await fetch("/api/investigate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+    renderInvResults(res);
+  } catch (e) {
+    $("inv-results").innerHTML = `<div class="empty">Request failed: ${esc(String(e))}</div>`;
+  } finally {
+    $("inv-status").textContent = "";
+    updateInvRun();
+  }
+}
+
+function renderInvResults(res) {
+  const c = $("inv-results");
+  c.innerHTML = "";
+  if (!res.available) {
+    c.appendChild(el("div", "empty", `The <code>claude</code> CLI isn't available, so investigation is disabled.<br>${esc(res.error || "")}`));
+    return;
+  }
+  const findings = res.findings || [];
+  if (res.error && !findings.length) {
+    c.appendChild(el("div", "empty", esc(res.error)));
+    if (res.raw) {
+      const pre = el("pre");
+      pre.textContent = res.raw;
+      c.appendChild(pre);
+    }
+    return;
+  }
+  if (res.summary) c.appendChild(el("div", "inv-summary", esc(res.summary)));
+  if (res.capped) c.appendChild(el("div", "muted", `Limited to the ${res.sessionCount} most recent sessions in range (${res.capped} older omitted).`));
+  if (!findings.length) {
+    c.appendChild(el("div", "muted", "Claude found no issue matching that description."));
+    return;
+  }
+  for (const f of findings) c.appendChild(findingCard(f));
+}
+
 // --- tabs / wiring ---------------------------------------------------------
 
 function setTab(name) {
@@ -244,6 +353,16 @@ function init() {
   $("project").addEventListener("change", scan); // changing project re-scans (SNAFUs + list) immediately
   $("q").addEventListener("keydown", (e) => e.key === "Enter" && scan());
   for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => setTab(b.dataset.tab);
+
+  // investigate modal
+  $("investigate-open").onclick = openInvestigate;
+  $("modal-close").onclick = closeInvestigate;
+  $("inv-find").onclick = invFindProjects;
+  $("inv-run").onclick = invRun;
+  $("inv-issue").addEventListener("input", updateInvRun);
+  $("modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeInvestigate(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeInvestigate(); });
+
   loadProjects().then(scan);
 }
 init();

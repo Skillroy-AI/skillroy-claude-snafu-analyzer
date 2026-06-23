@@ -23,7 +23,8 @@
         <label>To <input type="date" id="to" /></label>
         <label class="grow">Search <input type="search" id="q" placeholder="title, prompt, cwd…" /></label>
         <button id="scan" class="primary">Scan</button>
-        <button id="analyze" title="Optional semantic pass via your local claude CLI">Analyze with Claude</button>
+        <button id="analyze" title="Optional broad semantic scan via your local claude CLI">Analyze with Claude</button>
+        <button id="investigate-open" title="Describe a suspected issue and let Claude investigate specific sessions">🔎 Investigate…</button>
       </div>
       <div id="summary" class="summary"></div>
     </header>
@@ -45,6 +46,38 @@
         <div id="tab-memory" class="tab hidden"></div>
       </section>
     </main>
+
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Investigate a suspected SNAFU">
+      <div class="modal-box">
+        <div class="modal-head">
+          <h2>🔎 Investigate a suspected SNAFU</h2>
+          <button id="modal-close" class="icon" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="step">
+            <div class="step-h"><span class="num">1</span> Pick a date / time range</div>
+            <div class="row">
+              <label>From <input type="datetime-local" id="inv-from" /></label>
+              <label>To <input type="datetime-local" id="inv-to" /></label>
+              <button id="inv-find">Find projects in range</button>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-h"><span class="num">2</span> Select affected project(s)</div>
+            <div id="inv-projects" class="inv-projects muted">Set a range, then “Find projects in range”.</div>
+          </div>
+          <div class="step">
+            <div class="step-h"><span class="num">3</span> Describe what you suspect happened</div>
+            <textarea id="inv-issue" rows="4" placeholder="e.g. In a later session the graph database may have been referred to by the wrong name — drifting from the canonical name used earlier and in the memory files."></textarea>
+          </div>
+          <div class="modal-actions">
+            <button id="inv-run" class="primary" disabled>Investigate with Claude</button>
+            <span id="inv-status" class="muted"></span>
+          </div>
+          <div id="inv-results" class="inv-results"></div>
+        </div>
+      </div>
+    </div>
 
     <script src="/app.js"></script>
   </body>
