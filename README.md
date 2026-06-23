@@ -21,7 +21,7 @@ It's read-only: it never modifies transcripts, memory, or your projects.
 ```bash
 npm install
 npm start            # or: npm run dev   (auto-reload)
-# open http://localhost:4317
+# open http://localhost:4999
 ```
 
 Then pick a date range (and optionally a project), hit **Scan**, and review the **SNAFUs** tab.
@@ -50,6 +50,32 @@ buttons light up. If `claude` isn't found they degrade gracefully and the determ
   current memory is itself treated as evidence the drift happened — so this catches issues that no
   longer exist anywhere except the transcript.
 
+## `/snafu` skill — one-off investigation, no server
+
+For a quick "did X drift across my last sessions?" check without starting the web app, this repo ships
+a Claude Code **skill** at [`.claude/skills/snafu/`](.claude/skills/snafu/). Here, **Claude itself is
+the analyzer** — there's no server and no `claude -p` subprocess. A bundled zero-dependency helper
+(`extract.mjs`) finds the right transcripts, strips them to the narration, and appends the project's
+memory; Claude reads that and judges your suspicion.
+
+It's available automatically when you run Claude Code **in this repo**. To use it **anywhere**, install
+it at the user level:
+
+```bash
+# symlink keeps it in sync with the repo; or use cp -r to copy
+ln -s "$PWD/.claude/skills/snafu" ~/.claude/skills/snafu
+```
+
+Then invoke it conversationally — it infers what it can and only asks for what's missing:
+
+```
+/snafu                       # walks you through range → project(s) → suspicion
+snafu check on skillroy-tasks, last 2 sessions — did the DB name drift from LadybugDB to Kùzu?
+```
+
+The helper is also usable on its own: `node .claude/skills/snafu/extract.mjs --list` or
+`--project <name> --last <N>`.
+
 ## How it works
 
 ```
@@ -75,7 +101,7 @@ buttons light up. If `claude` isn't found they degrade gracefully and the determ
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `PORT` / `--port` | `4317` | server port |
+| `PORT` / `--port` | `4999` | server port |
 | `SNAFU_PROJECTS_DIR` / `--projects-dir` | `~/.claude/projects` | where transcripts live |
 | `SNAFU_CLAUDE_BIN` | `claude` | path to the `claude` CLI for the optional pass |
 
