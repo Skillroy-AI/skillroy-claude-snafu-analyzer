@@ -1,4 +1,31 @@
-# SNAFU Analyzer
+# Claude SNAFU Analyzer by Skillroy.AI
+
+## TL;DR
+
+**Ask Claude to install:**
+
+```
+Please clone https://github.com/Skillroy-AI/skillroy-claude-snafu-analyzer.git, then install the snafu skill globally for me via linking.
+```
+
+Then restart Claude and reload skills (only needed first time):
+
+```
+/reload-skills
+```
+
+**Example Usage:**
+
+```
+/snafu check on my-project, last 3 sessions — did Claude start contradicting an earlier decision about <topic>?
+```
+
+> [!TIP]
+>
+> 1. Periodically ask Claude to check Github for updates to the snafu skill.
+> 2. There is also a web UI for browsing through your transcripts and searching for issues (see "option 2" below).
+
+## About
 
 A local tool that reviews your **Claude Code transcripts and memory files** and surfaces *snafus* —
 things that quietly went sideways across sessions. Use it either as a one-message **`/snafu` skill**
