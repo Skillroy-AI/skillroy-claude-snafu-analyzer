@@ -22,7 +22,13 @@ export function readMemory(bucket: string, memoryDir: string | null): MemoryBund
         try {
           let text = fs.readFileSync(p, "utf8");
           if (text.length > MAX_FILE) text = text.slice(0, MAX_FILE) + "\n…(truncated)";
-          files.push({ name: path.relative(memoryDir, p), path: p, text });
+          let mtimeMs = 0;
+          try {
+            mtimeMs = fs.statSync(p).mtimeMs;
+          } catch {
+            /* keep 0 if stat fails */
+          }
+          files.push({ name: path.relative(memoryDir, p), path: p, text, mtimeMs });
         } catch {
           /* ignore unreadable file */
         }

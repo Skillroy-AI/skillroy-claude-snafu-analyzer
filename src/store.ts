@@ -167,6 +167,38 @@ export class Store {
     return out.sort((a, b) => (a.firstTs || "").localeCompare(b.firstTs || ""));
   }
 
+  /**
+   * Rich browse view for one project: its sessions newest-first, each with its human prompts and
+   * the memory files those prompts wrote, plus the project's current memory sorted newest-first.
+   */
+  browse(bucket: string, from?: string, to?: string) {
+    const details = this.sessionsForProjects([bucket], from, to).sort((a, b) =>
+      (b.firstTs || "").localeCompare(a.firstTs || ""),
+    );
+    const cwds = new Map<string, number>();
+    for (const s of details) for (const c of s.cwds) cwds.set(c.cwd, (cwds.get(c.cwd) || 0) + c.count);
+    const label = [...cwds.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || bucket;
+
+    const sessions = details.map((s) => ({
+      id: s.id,
+      title: s.title,
+      firstTs: s.firstTs,
+      lastTs: s.lastTs,
+      primaryCwd: s.primaryCwd,
+      cwdDiverged: s.cwdDiverged,
+      prompts: s.rounds
+        .filter((r) => r.source === "human" && r.userPrompt)
+        .map((r) => ({ round: r.index, ts: r.userTs, text: r.userPrompt, memoryWrites: r.memoryWrites })),
+    }));
+
+    const memory = (this.memoryByBucket.get(bucket)?.files || [])
+      .slice()
+      .sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0))
+      .map((f) => ({ name: f.name, text: f.text, mtimeMs: f.mtimeMs }));
+
+    return { project: bucket, label, sessionCount: sessions.length, sessions, memory };
+  }
+
   sessionById(id: string): SessionDetail | null {
     for (const [file, bucket] of this.fileToBucket) {
       if (file.endsWith(`/${id}.jsonl`)) return this.parse(file, bucket);
@@ -227,6 +259,6 @@ export class Store {
 }
 
 export function toSummary(s: SessionDetail, snafuFlags: string[]): SessionSummary {
-  const { rounds, signals, cwdTimeline, ...summary } = s;
+  const { rounds, signals, cwdTimeline, memoryWrites, ...summary } = s;
   return { ...summary, snafuFlags };
 }

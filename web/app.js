@@ -10,13 +10,23 @@ const el = (tag, cls, html) => {
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-const state = { sessions: [], findings: [], claudeFindings: [], selected: null, tab: "snafus" };
+const state = {
+  sessions: [],
+  findings: [],
+  claudeFindings: [],
+  selected: null,
+  tab: "snafus",
+  browseProject: null,
+  browseProjects: [],
+};
 
 const fmtTime = (iso) => {
   if (!iso) return "?";
   const d = new Date(iso);
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 };
+const fmtMs = (ms) => (ms ? fmtTime(new Date(ms).toISOString()) : "?");
+const cssId = (s) => String(s).replace(/[^a-z0-9]/gi, "_");
 const shortCwd = (p) => {
   if (!p) return "";
   const parts = p.split("/").filter(Boolean);
@@ -59,6 +69,7 @@ async function scan() {
   renderList();
   renderSnafus();
   if (state.tab === "memory") renderMemory();
+  if (state.tab === "browse") renderBrowse();
 }
 
 async function selectSession(id) {
@@ -213,17 +224,161 @@ async function renderMemory() {
   const proj = $("project").value.trim();
   const { memory } = await (await fetch("/api/memory" + (proj ? "?project=" + encodeURIComponent(proj) : ""))).json();
   c.innerHTML = "";
-  const files = memory.flatMap((m) => m.files.map((f) => ({ ...f, bucket: m.bucket })));
+  const files = memory
+    .flatMap((m) => m.files.map((f) => ({ ...f, bucket: m.bucket })))
+    .sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0)); // newest-modified first
   if (!files.length) {
     c.appendChild(el("div", "empty", "No memory files found for this project scope."));
     return;
   }
   for (const f of files) {
     const box = el("div", "memfile");
-    box.appendChild(el("h4", null, esc(f.name)));
+    box.appendChild(el("h4", null, `${esc(f.name)} <span class="b-mtime">${fmtMs(f.mtimeMs)}</span>`));
     box.appendChild(el("pre", null, esc(f.text)));
     c.appendChild(box);
   }
+}
+
+// --- browse (prompts + associated memory, back in time) --------------------
+
+function rangeParams() {
+  const u = new URLSearchParams();
+  for (const k of ["from", "to"]) {
+    const v = $(k).value.trim();
+    if (v) u.set(k, v);
+  }
+  return u;
+}
+
+async function renderBrowse() {
+  const c = $("tab-browse");
+  c.innerHTML =
+    '<div class="browse-pick"><span class="muted">Projects in range</span>' +
+    '<div id="browse-chips" class="browse-chips"><span class="muted">loading…</span></div></div>' +
+    '<div id="browse-body" class="browse-body"></div>';
+  const { projects } = await (await fetch("/api/projects-in-range?" + rangeParams().toString())).json();
+  state.browseProjects = projects || [];
+  if (!state.browseProjects.length) {
+    $("browse-chips").innerHTML = '<span class="muted">none</span>';
+    $("browse-body").innerHTML = el(
+      "div",
+      "empty",
+      "No projects had sessions in this date range. Widen the From / To dates above and reopen Browse.",
+    ).outerHTML;
+    return;
+  }
+  // keep current pick if still valid, else prefer the header's selected project, else the first.
+  let sel = state.browseProject;
+  if (!sel || !state.browseProjects.some((p) => p.bucket === sel)) {
+    const g = $("project").value.trim();
+    sel = state.browseProjects.some((p) => p.bucket === g) ? g : state.browseProjects[0].bucket;
+  }
+  state.browseProject = sel;
+  renderBrowseChips();
+  loadBrowseBody();
+}
+
+function renderBrowseChips() {
+  const chips = $("browse-chips");
+  chips.innerHTML = "";
+  for (const p of state.browseProjects) {
+    const b = el(
+      "button",
+      "browse-chip" + (p.bucket === state.browseProject ? " on" : ""),
+      `${esc(shortCwd(p.label))} <span class="n">${p.sessionCount}</span>` +
+        (p.cwdCount > 1 ? ' <span class="n warn">⚠</span>' : "") +
+        (p.hasMemory ? ' <span class="n">mem</span>' : ""),
+    );
+    b.onclick = () => {
+      state.browseProject = p.bucket;
+      renderBrowseChips();
+      loadBrowseBody();
+    };
+    chips.appendChild(b);
+  }
+}
+
+async function loadBrowseBody() {
+  const body = $("browse-body");
+  body.innerHTML = '<p class="muted">loading…</p>';
+  const u = rangeParams();
+  u.set("project", state.browseProject);
+  try {
+    const data = await (await fetch("/api/browse?" + u.toString())).json();
+    renderBrowseData(data);
+  } catch (e) {
+    body.innerHTML = `<div class="empty">Could not load: ${esc(String(e))}</div>`;
+  }
+}
+
+function renderBrowseData(d) {
+  const body = $("browse-body");
+  body.innerHTML = "";
+  const grid = el("div", "browse-grid");
+
+  // Left column: prompts grouped by session, newest session first.
+  const left = el("div", "browse-col");
+  left.appendChild(el("h3", null, `Your prompts <span class="muted">(newest first)</span>`));
+  const sessions = d.sessions || [];
+  if (!sessions.length) left.appendChild(el("div", "empty", "No prompts from you in this range."));
+  for (const s of sessions) {
+    const sc = el("div", "b-session");
+    const head = el("div", "b-shead");
+    head.innerHTML =
+      `<span class="b-title">${esc(s.title)}</span><span class="when">${fmtTime(s.firstTs)}</span>` +
+      `<div class="b-cwd">${esc(shortCwd(s.primaryCwd))}${s.cwdDiverged ? " ⚠︎" : ""}</div>`;
+    const open = el("a", "b-open", "open session →");
+    open.onclick = () => selectSession(s.id);
+    head.appendChild(open);
+    sc.appendChild(head);
+    for (const p of s.prompts || []) {
+      const pr = el("div", "b-prompt");
+      pr.innerHTML = `<div class="b-when">${fmtTime(p.ts)}</div><div class="b-text">${esc(p.text)}</div>`;
+      if (p.memoryWrites && p.memoryWrites.length) {
+        const mw = el("div", "b-mw");
+        for (const name of p.memoryWrites) {
+          const chip = el("button", "mw-chip", "📝 " + esc(name));
+          chip.title = "Jump to this memory document";
+          chip.onclick = () => focusMemory(name);
+          mw.appendChild(chip);
+        }
+        pr.appendChild(mw);
+      }
+      sc.appendChild(pr);
+    }
+    left.appendChild(sc);
+  }
+
+  // Right column: the project's memory, newest-modified first, with backlinks to the writing prompt.
+  const right = el("div", "browse-col");
+  right.appendChild(el("h3", null, `Memory documents <span class="muted">(newest first)</span>`));
+  const writers = {};
+  for (const s of sessions)
+    for (const p of s.prompts || [])
+      for (const n of p.memoryWrites || []) (writers[n] = writers[n] || []).push(`${s.id.slice(0, 8)} r${p.round}`);
+  const memory = d.memory || [];
+  if (!memory.length) right.appendChild(el("div", "empty", "No memory documents for this project."));
+  for (const m of memory) {
+    const card = el("div", "memfile b-mem");
+    card.id = "mem-" + cssId(m.name);
+    const back = writers[m.name]
+      ? `<span class="b-writers" title="written/edited by these prompts">↩ ${esc(writers[m.name].join(", "))}</span>`
+      : "";
+    card.innerHTML = `<h4>${esc(m.name)} <span class="b-mtime">${fmtMs(m.mtimeMs)}</span>${back}</h4><pre>${esc(m.text)}</pre>`;
+    right.appendChild(card);
+  }
+
+  grid.appendChild(left);
+  grid.appendChild(right);
+  body.appendChild(grid);
+}
+
+function focusMemory(name) {
+  const card = $("mem-" + cssId(name));
+  if (!card) return;
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  card.classList.add("flash");
+  setTimeout(() => card.classList.remove("flash"), 1200);
 }
 
 // --- investigate modal -----------------------------------------------------
@@ -339,8 +494,9 @@ function renderInvResults(res) {
 function setTab(name) {
   state.tab = name;
   for (const b of document.querySelectorAll(".tabs button")) b.classList.toggle("active", b.dataset.tab === name);
-  for (const t of ["snafus", "session", "memory"]) $("tab-" + t).classList.toggle("hidden", t !== name);
+  for (const t of ["snafus", "browse", "session", "memory"]) $("tab-" + t).classList.toggle("hidden", t !== name);
   if (name === "memory") renderMemory();
+  if (name === "browse") renderBrowse();
 }
 
 function init() {
@@ -350,7 +506,10 @@ function init() {
   $("from").value = from.toISOString().slice(0, 10);
   $("scan").onclick = scan;
   $("analyze").onclick = analyze;
-  $("project").addEventListener("change", scan); // changing project re-scans (SNAFUs + list) immediately
+  $("project").addEventListener("change", () => {
+    state.browseProject = $("project").value.trim() || null; // keep Browse in step with the header
+    scan(); // changing project re-scans (SNAFUs + list) immediately
+  });
   $("q").addEventListener("keydown", (e) => e.key === "Enter" && scan());
   for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => setTab(b.dataset.tab);
 

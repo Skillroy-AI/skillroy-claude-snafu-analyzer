@@ -1,6 +1,6 @@
 ---
 name: snafu
-description: Investigate a suspected "SNAFU" across past Claude Code sessions — terminology/decision drift, dropped TODOs, decisions never saved to memory, or wrong-folder/context mix-ups — by reading the relevant transcripts' narration plus the project's memory, then judging whether the suspicion holds. Use when the user says "snafu", "snafu check", or asks to investigate whether something drifted / was forgotten / was contradicted across earlier sessions.
+description: Investigate a suspected "SNAFU" across past Claude Code sessions — terminology/decision drift, dropped TODOs, decisions never saved to memory, or wrong-folder/context mix-ups — by reading the relevant transcripts' narration plus the project's memory, then judging whether the suspicion holds. Also browses a project's recent MEMORY documents or your recent prompts (newest first). Use when the user says "snafu", "snafu check", asks to investigate whether something drifted / was forgotten / was contradicted across earlier sessions, or asks to see recent memory documents / recent prompts for a project.
 ---
 
 # snafu — investigate a suspected SNAFU in past sessions
@@ -76,6 +76,34 @@ node "$SNAFU_DIR/extract.mjs" --list
 pack → confirm whether the database's canonical name (per memory) drifted to its upstream name across
 those sessions, quoting each `[session-id]`, and flag the risk that a fresh session with empty context
 could inherit the wrong name. Recommend the fix; apply it only if asked.
+
+## Browsing memory & prompts (a quick look, no investigation)
+
+The same helper also just *shows* things, newest-first. Both default to the **current project**
+(inferred from the directory Claude is running in) when the user doesn't name one; pass
+`--project "<name>"` (or `--bucket <bucket>`) to target another, and `--last N` to limit the count.
+
+- **Recent MEMORY documents** — newest-modified first:
+
+  ```bash
+  node "$SNAFU_DIR/extract.mjs" --memory --last 3
+  node "$SNAFU_DIR/extract.mjs" --memory --project skillroy-tasks --last 5
+  ```
+
+  e.g. *"show me the last three MEMORY documents in this project."*
+
+- **Recent prompts you typed** — newest first (slash-commands and compaction summaries excluded):
+
+  ```bash
+  node "$SNAFU_DIR/extract.mjs" --prompts --last 3
+  node "$SNAFU_DIR/extract.mjs" --prompts --project foo --from 2026-06-01
+  ```
+
+  e.g. *"show my last three prompts."*
+
+Just relay what the helper prints — it's already formatted. If `--project` is ambiguous it exits 2 with
+candidate buckets: show them, ask which, then re-run with `--bucket <bucket>`. If the current project
+can't be inferred (the helper says so), ask the user which project they mean.
 
 ## Notes
 - Requires `node` on PATH (the helper is zero-dependency). If `node` is somehow unavailable, fall back

@@ -103,6 +103,19 @@ It reads those sessions' narration + memory and tells you what drifted and which
 then suggests a fix (read-only — it won't change anything). The web app's **🔎 Investigate…** button
 does the same thing, point-and-click, and is handy for very large spans.
 
+### Browse memory & prompts
+
+`/snafu` can also just *show* you recent things, newest-first — no investigation needed:
+
+```
+snafu show me the last 3 MEMORY documents in this project
+snafu show my last 3 prompts
+snafu show the last 5 memory docs in skillroy-tasks
+```
+
+It defaults to the project you're currently in (handy for a quick "what did I ask lately?" or "what
+got saved to memory recently?").
+
 ## Option 2 — the web app (browsable UI)
 
 The web app adds a clickable timeline and always-on deterministic detectors across **all** your
@@ -116,8 +129,11 @@ npm start            # start the local server
 ```
 
 Pick a date range (and optionally a project), hit **Scan**, and review the **SNAFUs** tab; click any
-evidence to jump to that session. If the [`claude` CLI](https://claude.com/claude-code) is on your
-`PATH` (no API key needed), two extra buttons appear:
+evidence to jump to that session. The **Browse** tab is a point-and-click timeline: choose a project
+in range and read your prompts newest-first, with the memory document(s) each prompt wrote linked
+right alongside (and the **Memory** tab lists docs newest-modified first). If the
+[`claude` CLI](https://claude.com/claude-code) is on your `PATH` (no API key needed), two extra
+buttons appear:
 
 - **Analyze with Claude** — a broad semantic scan of everything in scope.
 - **🔎 Investigate…** — the guided, point-and-click version of the `/snafu` skill.
@@ -156,9 +172,9 @@ Everything is read-only — it never changes your transcripts, memory, or projec
 ## API (for scripting)
 
 `GET /api/projects` · `GET /api/sessions?from&to&project&q` · `GET /api/sessions/:id` ·
-`GET /api/snafus?from&to&project` · `GET /api/memory?project` · `GET /api/claude/available` ·
-`POST /api/analyze?from&to&project` · `GET /api/projects-in-range?from&to` ·
-`POST /api/investigate` (body: `{from, to, projects[], issue}`)
+`GET /api/snafus?from&to&project` · `GET /api/memory?project` · `GET /api/browse?project&from&to` ·
+`GET /api/claude/available` · `POST /api/analyze?from&to&project` ·
+`GET /api/projects-in-range?from&to` · `POST /api/investigate` (body: `{from, to, projects[], issue}`)
 
 ## Caveats
 

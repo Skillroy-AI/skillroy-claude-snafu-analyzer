@@ -70,6 +70,15 @@ export function createServer(store: Store) {
     res.json({ memory: store.memory(req.query.project as string | undefined) });
   });
 
+  // Browse one project over a range: prompts newest-first, with the memory each prompt wrote.
+  app.get("/api/browse", (req, res) => {
+    const project = (req.query.project as string) || "";
+    if (!project) return res.status(400).json({ error: "project is required" });
+    const from = (req.query.from as string) || undefined;
+    const to = (req.query.to as string) || undefined;
+    res.json(store.browse(project, from, to));
+  });
+
   app.get("/api/claude/available", async (_req, res) => res.json(await claudeAvailable()));
 
   app.post("/api/analyze", async (req, res) => {

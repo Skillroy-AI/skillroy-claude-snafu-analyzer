@@ -11,6 +11,15 @@
  *       → a NARRATION PACK (human prompts + Claude's text, tool I/O stripped) for the
  *         selected sessions, followed by that project's current memory files.
  *
+ *   node extract.mjs --memory  [--project <substr> | --bucket <exact>] [--last N]
+ *       → the project's MEMORY documents, newest-modified first (browse memory back in time).
+ *
+ *   node extract.mjs --prompts [--project <substr> | --bucket <exact>] [--last N] [--from --to]
+ *       → the project's genuine USER PROMPTS, newest first (browse your prompts back in time).
+ *
+ * For --memory / --prompts, the project defaults to the CURRENT one (inferred from the cwd)
+ * when neither --project nor --bucket is given.
+ *
  * Groups sessions by their real cwd (the transcript-folder name is a lossy cwd encoding) and
  * hides the analyzer's own `claude -p` sub-runs (which log under the OS temp dir).
  */
@@ -87,6 +96,48 @@ function userText(content) {
   return residual || null;
 }
 
+// Mirror of src/parse.ts classifyUser: tells a genuine human prompt apart from slash-commands,
+// tool-results, and meta/context noise. Keep in sync with the typed analyzer.
+function classify(content, isMeta) {
+  let text = "";
+  let hasTR = false;
+  if (typeof content === "string") text = content;
+  else if (Array.isArray(content))
+    for (const b of content) {
+      if (b && b.type === "text" && typeof b.text === "string") text += (text ? "\n\n" : "") + b.text;
+      else if (b && b.type === "tool_result") hasTR = true;
+    }
+  const cmd = (text.match(/<command-name>\s*([^<]+?)\s*<\/command-name>/) || [])[1];
+  const residual = text.replace(WRAP, "").trim();
+  if (hasTR && !residual) return { kind: "tool_result", text: "" };
+  if (cmd) return { kind: "command", text: cmd.trim() + (residual ? `  —  ${residual}` : "") };
+  if (/^#{1,3}\s*Context Usage\b/.test(residual) || /^Caveat:/.test(residual)) return { kind: "meta", text: "" };
+  if (!residual) return { kind: hasTR ? "tool_result" : "meta", text: "" };
+  if (isMeta && residual.length < 40) return { kind: "meta", text: "" };
+  return { kind: isMeta ? "command" : "human", text: residual };
+}
+
+// Genuine human prompts (with timestamps) from one transcript, in file order.
+function humanPrompts(file, cap = 2000) {
+  const raw = fs.readFileSync(file, "utf8");
+  const out = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let d;
+    try {
+      d = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const msg = d.message;
+    if (!msg || msg.role !== "user") continue;
+    if (d.isCompactSummary) continue; // auto-generated "continued from…" summary, not a typed prompt
+    const { kind, text } = classify(msg.content, !!d.isMeta);
+    if (kind === "human" && text.trim()) out.push({ ts: d.timestamp, text: text.slice(0, cap) });
+  }
+  return out;
+}
+
 function lightScan(file) {
   const raw = fs.readFileSync(file, "utf8");
   let firstTs, lastTs, title = "", firstUser = "";
@@ -156,7 +207,11 @@ function readMemory(memDir) {
         try {
           let t = fs.readFileSync(p, "utf8");
           if (t.length > 64000) t = t.slice(0, 64000) + "\n…(truncated)";
-          out.push({ name: path.relative(memDir, p), text: t });
+          let mtimeMs = 0;
+          try {
+            mtimeMs = fs.statSync(p).mtimeMs;
+          } catch {}
+          out.push({ name: path.relative(memDir, p), text: t, mtimeMs });
         } catch {}
       }
     }
@@ -195,6 +250,93 @@ if (has("list") || args.length === 0) {
   }
   projects.sort((a, b) => (b.lastTs || "").localeCompare(a.lastTs || ""));
   console.log(JSON.stringify({ projects }, null, 2));
+  process.exit(0);
+}
+
+// Infer the CURRENT project from process.cwd() (used when --memory/--prompts get no --project).
+function currentBucket() {
+  const cwd = process.cwd();
+  let best = null;
+  let bestN = -1;
+  for (const b of buckets) {
+    const n = b.cwds.get(cwd) || 0;
+    if (n > bestN) {
+      best = b;
+      bestN = n;
+    }
+  }
+  if (best && bestN > 0) return best; // matched a real recorded cwd
+  const enc = cwd.replace(/[/.]/g, "-"); // fall back to the lossy bucket-name encoding
+  return buckets.find((b) => b.bucket === enc) || null;
+}
+
+// Resolve exactly ONE project for the project-scoped commands, defaulting to the current project.
+function resolveOneBucket() {
+  const bucketArg = opt("bucket");
+  const projArg = opt("project");
+  if (bucketArg) {
+    const b = buckets.find((x) => x.bucket === bucketArg);
+    if (!b) {
+      console.error(`No bucket "${bucketArg}". Run with --list to see options.`);
+      process.exit(1);
+    }
+    return b;
+  }
+  if (projArg) {
+    const q = projArg.toLowerCase();
+    const matches = buckets.filter((b) => b.label.toLowerCase().includes(q) || b.bucket.toLowerCase().includes(q));
+    if (matches.length === 0) {
+      console.error(`No project matches "${projArg}". Run with --list to see options.`);
+      process.exit(1);
+    }
+    if (matches.length > 1) {
+      const exact = matches.filter((b) => path.basename(b.label) === projArg);
+      if (exact.length === 1) return exact[0];
+      console.log(JSON.stringify({ ambiguous: true, candidates: matches.map((b) => ({ bucket: b.bucket, label: b.label, sessionCount: b.scans.length })) }, null, 2));
+      process.exit(2);
+    }
+    return matches[0];
+  }
+  const cur = currentBucket();
+  if (!cur) {
+    console.error(`Could not infer the current project from ${process.cwd()}. Pass --project <substr> or --bucket <bucket>, or use --list.`);
+    process.exit(1);
+  }
+  return cur;
+}
+
+// --- memory mode: a project's memory documents, newest-modified first ---
+if (has("memory")) {
+  const b = resolveOneBucket();
+  let mems = readMemory(b.memDir).sort((a, x) => x.mtimeMs - a.mtimeMs);
+  const lastN = opt("last");
+  if (lastN) mems = mems.slice(0, Number(lastN));
+  if (!mems.length) {
+    console.error(`No memory documents for ${b.label} (${b.bucket}).`);
+    process.exit(1);
+  }
+  const out = [`# MEMORY DOCUMENTS — ${b.label}   (${mems.length} shown, newest first)\n`];
+  for (const m of mems) out.push(`## ${m.name}   (modified ${new Date(m.mtimeMs).toISOString()})\n${m.text}\n`);
+  console.log(out.join("\n"));
+  process.exit(0);
+}
+
+// --- prompts mode: a project's genuine human prompts, newest first ---
+if (has("prompts")) {
+  const b = resolveOneBucket();
+  const scans = b.scans.filter((s) => overlaps(s, from, to));
+  const prompts = [];
+  for (const s of scans) for (const p of humanPrompts(s.file)) prompts.push({ ...p, sid: s.id, title: s.title });
+  prompts.sort((a, x) => (x.ts || "").localeCompare(a.ts || ""));
+  const lastN = opt("last");
+  const shown = lastN ? prompts.slice(0, Number(lastN)) : prompts;
+  if (!shown.length) {
+    console.error(`No user prompts for ${b.label} in that scope.`);
+    process.exit(1);
+  }
+  const out = [`# USER PROMPTS — ${b.label}   (${shown.length} shown, newest first)\n`];
+  for (const p of shown) out.push(`[${p.ts || "?"}  ·  ${p.sid.slice(0, 8)}  "${p.title}"]\n${p.text}\n`);
+  console.log(out.join("\n"));
   process.exit(0);
 }
 

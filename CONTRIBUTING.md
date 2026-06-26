@@ -36,9 +36,11 @@ There are **two surfaces** over the same idea (parse transcripts → find snafus
 | `.claude/skills/snafu/` | The `/snafu` skill — `SKILL.md` + a **zero-dependency** `extract.mjs` |
 | `test/` | `node:test` suites using synthetic fixtures (no real transcripts) |
 
-`src/` modules: `discover` (find buckets) → `parse` (JSONL → rounds/signals/cwd-timeline) →
-`extract` (heuristic signals) → `detectors` (deterministic findings) / `analyze-claude` (optional
-`claude -p` passes); `store` caches + scopes; `server` exposes the API + static UI; `index` is the CLI.
+`src/` modules: `discover` (find buckets) → `parse` (JSONL → rounds/signals/cwd-timeline, and which
+memory files each round wrote) → `extract` (heuristic signals) → `detectors` (deterministic findings) /
+`analyze-claude` (optional `claude -p` passes); `store` caches + scopes (and `store.browse` powers the
+Browse tab: prompts newest-first with their memory writes); `server` exposes the API + static UI;
+`index` is the CLI.
 
 ## Design principles (don't break these)
 
@@ -59,8 +61,11 @@ The "narration pack" (human prompts + Claude's text, tool I/O stripped) is produ
 - `src/parse.ts` → `sessionNarration()` — typed, used by the web app's Investigate endpoint
 - `.claude/skills/snafu/extract.mjs` — standalone & zero-dep, so the skill works without the repo built
 
-They intentionally duplicate the parsing logic (wrapper-stripping, temp-run suppression, etc.). **If you
-change one, change the other** — or unify them (see roadmap).
+They intentionally duplicate the parsing logic (wrapper-stripping, temp-run suppression, the
+human-vs-command-vs-summary classification in `classify()` ↔ `classifyUser()`, etc.). The same split
+applies to the browse features: the skill's `--memory` / `--prompts` modes are the CLI counterpart to
+the web's `/api/browse` (`store.browse`) + Browse tab. **If you change one side, change the other** — or
+unify them (see roadmap).
 
 ## Tests
 

@@ -68,8 +68,14 @@ function lastTextBlock(content: unknown): string {
   return "";
 }
 
-function toolCallsOf(content: unknown): { calls: ToolCall[]; thinking: number; textBlocks: number } {
+function toolCallsOf(content: unknown): {
+  calls: ToolCall[];
+  thinking: number;
+  textBlocks: number;
+  memoryWrites: string[];
+} {
   const calls: ToolCall[] = [];
+  const memoryWrites: string[] = [];
   let thinking = 0;
   let textBlocks = 0;
   if (Array.isArray(content)) {
@@ -77,10 +83,25 @@ function toolCallsOf(content: unknown): { calls: ToolCall[]; thinking: number; t
       if (!b || typeof b !== "object") continue;
       if (b.type === "thinking") thinking++;
       else if (b.type === "text" && (b.text || "").trim()) textBlocks++;
-      else if (b.type === "tool_use") calls.push({ name: b.name, target: toolTarget(b.name, b.input) });
+      else if (b.type === "tool_use") {
+        calls.push({ name: b.name, target: toolTarget(b.name, b.input) });
+        if (["Write", "Edit", "NotebookEdit"].includes(b.name)) {
+          const mem = memoryNameFromPath(b.input?.file_path);
+          if (mem) memoryWrites.push(mem);
+        }
+      }
     }
   }
-  return { calls, thinking, textBlocks };
+  return { calls, thinking, textBlocks, memoryWrites };
+}
+
+/** If a written path is under a `…/memory/` dir, return its name relative to that dir, else null. */
+function memoryNameFromPath(p: unknown): string | null {
+  if (typeof p !== "string") return null;
+  const i = p.lastIndexOf("/memory/");
+  if (i === -1) return null;
+  const rel = p.slice(i + "/memory/".length);
+  return rel.endsWith(".md") ? rel : null;
 }
 
 function toolTarget(name: string, input: any): string | undefined {
@@ -182,6 +203,7 @@ export function parseSessionFile(file: string, bucket: string): SessionDetail {
       thinkingCount: 0,
       toolCalls: [],
       signals: [],
+      memoryWrites: [],
       _asstConcat: "",
     };
     rounds.push(r);
@@ -220,20 +242,23 @@ export function parseSessionFile(file: string, bucket: string): SessionDetail {
     if (role === "user") {
       userMsgCount++;
       const { kind, text } = classifyUser(msg.content, !!d.isMeta);
-      if (kind === "human" || kind === "command") {
+      // An injected compaction summary ("continued from a previous conversation…") is a user-role
+      // line but not a turn the human typed — don't let it open a round.
+      if (!d.isCompactSummary && (kind === "human" || kind === "command")) {
         cur = startRound(kind === "command" ? "command" : "human", text, ts);
         for (const s of extractSignals(text, "user", id, cur.index, ts)) cur.signals.push(s);
       } else if (cur && ts) {
-        cur.endTs = ts; // tool_result / meta turn — keep the round's clock moving
+        cur.endTs = ts; // tool_result / meta / summary turn — keep the round's clock moving
       }
     } else if (role === "assistant") {
       assistantMsgCount++;
       if (!cur) cur = startRound("meta", "(session opened)", ts);
-      const { calls, thinking, textBlocks } = toolCallsOf(msg.content);
+      const { calls, thinking, textBlocks, memoryWrites } = toolCallsOf(msg.content);
       for (const c of calls) {
         cur.toolCalls.push(c);
         toolCounts[c.name] = (toolCounts[c.name] || 0) + 1;
       }
+      for (const m of memoryWrites) cur.memoryWrites.push(m);
       cur.thinkingCount += thinking;
       cur.assistantTextCount += textBlocks;
       const last = lastTextBlock(msg.content);
@@ -251,7 +276,13 @@ export function parseSessionFile(file: string, bucket: string): SessionDetail {
       for (const s of extractSignals(r._asstConcat, "assistant", id, r.index, r.endTs)) r.signals.push(s);
     }
     delete (r as any)._asstConcat;
+    if (r.memoryWrites.length > 1) r.memoryWrites = [...new Set(r.memoryWrites)];
   }
+
+  // Session-level roll-up: which memory files were written, and in which round.
+  const memoryWrites: SessionDetail["memoryWrites"] = [];
+  for (const r of rounds)
+    for (const name of r.memoryWrites) memoryWrites.push({ name, round: r.index, ts: r.endTs });
 
   const cwds = [...cwdCounts.entries()]
     .map(([cwd, count]) => ({ cwd, count }))
@@ -288,5 +319,6 @@ export function parseSessionFile(file: string, bucket: string): SessionDetail {
     rounds,
     signals: allSignals,
     cwdTimeline,
+    memoryWrites,
   };
 }

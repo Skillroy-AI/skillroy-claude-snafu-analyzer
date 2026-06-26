@@ -58,6 +58,8 @@ export interface Round {
   thinkingCount: number;
   toolCalls: ToolCall[];
   signals: Signal[];
+  /** Memory files (relative to the bucket's memory/ dir) written or edited in this round. */
+  memoryWrites: string[];
 }
 
 export interface CwdPoint {
@@ -98,6 +100,8 @@ export interface SessionDetail extends SessionSummary {
   rounds: Round[];
   signals: Signal[];
   cwdTimeline: CwdPoint[];
+  /** Memory files this session wrote/edited, with the round (prompt) that did it. */
+  memoryWrites: { name: string; round: number; ts?: string }[];
 }
 
 export type Severity = "info" | "low" | "medium" | "high";
@@ -125,6 +129,8 @@ export interface MemoryFile {
   name: string;
   path: string;
   text: string;
+  /** Last-modified time (ms since epoch) — used to browse memory "back in time". */
+  mtimeMs: number;
 }
 
 export interface MemoryBundle {

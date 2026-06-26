@@ -58,6 +58,39 @@ test("cd into a subfolder is movement but NOT divergence", () => {
   assert.equal(s.cwdDiverged, false);
 });
 
+test("memory writes are attributed to the round and session", () => {
+  const file = fixture([
+    { ...base, type: "user", timestamp: "2026-06-22T00:00:00Z", cwd: "/a/b", message: { role: "user", content: "remember this fact" } },
+    { ...base, type: "assistant", timestamp: "2026-06-22T00:00:30Z", cwd: "/a/b", message: { role: "assistant", content: [
+      { type: "tool_use", name: "Write", input: { file_path: "/Users/x/.claude/projects/-a-b/memory/fact-one.md" } },
+      { type: "text", text: "saved it" },
+    ] } },
+    { ...base, type: "user", timestamp: "2026-06-22T00:01:00Z", cwd: "/a/b", message: { role: "user", content: "now update the index" } },
+    { ...base, type: "assistant", timestamp: "2026-06-22T00:01:30Z", cwd: "/a/b", message: { role: "assistant", content: [
+      { type: "tool_use", name: "Edit", input: { file_path: "/Users/x/.claude/projects/-a-b/memory/MEMORY.md" } },
+      { type: "tool_use", name: "Write", input: { file_path: "/a/b/src/index.ts" } }, // NOT under memory/
+    ] } },
+  ]);
+  const s = parseSessionFile(file, "bucket");
+
+  assert.deepEqual(s.rounds[0].memoryWrites, ["fact-one.md"]);
+  assert.deepEqual(s.rounds[1].memoryWrites, ["MEMORY.md"], "non-memory writes are ignored");
+  assert.deepEqual(s.memoryWrites.map((w) => w.name), ["fact-one.md", "MEMORY.md"]);
+  assert.equal(s.memoryWrites[0].round, 0);
+  assert.equal(s.memoryWrites[1].round, 1);
+});
+
+test("an injected compaction summary is not a human prompt/round", () => {
+  const file = fixture([
+    { ...base, type: "user", timestamp: "2026-06-22T00:00:00Z", cwd: "/a/b", isCompactSummary: true, message: { role: "user", content: "This session is being continued from a previous conversation that ran out of context. Summary: …" } },
+    { ...base, type: "user", timestamp: "2026-06-22T00:00:10Z", cwd: "/a/b", message: { role: "user", content: "the real first prompt" } },
+    { ...base, type: "assistant", timestamp: "2026-06-22T00:01:00Z", cwd: "/a/b", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } },
+  ]);
+  const s = parseSessionFile(file, "bucket");
+  assert.equal(s.roundCount, 1);
+  assert.equal(s.rounds[0].userPrompt, "the real first prompt");
+});
+
 test("a /context dump and system-reminder do not create human rounds", () => {
   const file = fixture([
     { ...base, type: "user", timestamp: "2026-06-22T00:00:00Z", cwd: "/a/b", isMeta: true, message: { role: "user", content: "## Context Usage\nTokens: 10k" } },
